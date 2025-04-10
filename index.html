@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LifeSchool Youtube</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background-color: #3a4a2f;
+      color: #ffffff;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem;
+      background-color: #2f3a22;
+    }
+    h1 {
+      font-size: 1.5rem;
+    }
+    #settingsToggle {
+      cursor: pointer;
+      background: none;
+      border: none;
+      fill: #ffffff;
+      font-size: 2rem;
+    }
+    #settingsPanel {
+      display: none;
+      background-color: #2f3a22;
+      padding: 1rem;
+    }
+    select, input[type="checkbox"] {
+      margin: 0.5rem;
+      background-color: #4a5a33;
+      color: white;
+      border: none;
+      padding: 0.5rem;
+    }
+    #videoList button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background-color: #4a5a33;
+      border: none;
+      padding: 0.5rem;
+      color: white;
+      cursor: pointer;
+    }
+    iframe {
+      width: 100%;
+      height: 300px;
+      border: none;
+      margin-top: 1rem;
+    }
+    @media (max-width: 600px) {
+      iframe { height: 200px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🎥 LifeSchool YT Videos</h1>
+    <button id="settingsToggle">⚙️</button>
+  </header>
+  <div id="settingsPanel">
+    <label>Age:
+      <select id="ageFilter"></select>
+    </label>
+    <label>Music:
+      <select id="musicFilter">
+        <option value="Yes">Yes</option>
+        <option value="No">No</option>
+        <option value="All">All</option>
+      </select>
+    </label>
+    <label>Language:
+      <label><input type="checkbox" class="lang" value="English" checked> English</label>
+      <label><input type="checkbox" class="lang" value="Bengali"> Bengali</label>
+      <label><input type="checkbox" class="lang" value="Arabic"> Arabic</label>
+    </label>
+    <label>Category:
+      <div id="categoryFilters"></div>
+    </label>
+  </div>
+  <iframe id="videoFrame" allowfullscreen></iframe>
+  <div id="videoList"></div>
+  <script>
+    const defaultSettings = {
+      age: 3,
+      music: "Yes",
+      languages: ["English"],
+      categories: []
+    };
+
+    let videos = [];
+    let filtered = [];
+
+    const ageSelect = document.getElementById("ageFilter");
+    for (let i = 1; i <= 18; i++) {
+      const opt = document.createElement("option");
+      opt.value = i;
+      opt.textContent = i;
+      if (i === defaultSettings.age) opt.selected = true;
+      ageSelect.appendChild(opt);
+    }
+
+    document.getElementById("settingsToggle").onclick = () => {
+      const panel = document.getElementById("settingsPanel");
+      panel.style.display = panel.style.display === "block" ? "none" : "block";
+    };
+
+    async function loadFiles() {
+      try {
+        const res = await fetch("videos.lst");
+        const text = await res.text();
+        const lines = text.trim().split("\n").slice(1);
+        const allCategories = new Set();
+        videos = [];
+
+        lines.forEach(line => {
+          const [id, lang, category, age, music, ...titleParts] = line.split(",");
+          const title = titleParts.join(",").trim();
+          allCategories.add(category.trim());
+          videos.push({ id: id.trim(), lang: lang.trim(), category: category.trim(), age: +age, music: music.trim(), title });
+        });
+
+        updateCategoryFilters([...allCategories]);
+        applyFilters();
+      } catch (e) {
+        console.warn("Failed to load videos.lst", e);
+      }
+    }
+
+    function updateCategoryFilters(categories) {
+      const box = document.getElementById("categoryFilters");
+      box.innerHTML = "";
+      categories.forEach(cat => {
+        const lbl = document.createElement("label");
+        lbl.innerHTML = `<input type="checkbox" class="cat" value="${cat}" checked> ${cat}`;
+        box.appendChild(lbl);
+      });
+    }
+
+    function getSettings() {
+      const settings = {
+        age: +document.getElementById("ageFilter").value,
+        music: document.getElementById("musicFilter").value,
+        languages: Array.from(document.querySelectorAll(".lang:checked")).map(e => e.value),
+        categories: Array.from(document.querySelectorAll(".cat:checked")).map(e => e.value)
+      };
+      localStorage.setItem("videoSettings", JSON.stringify(settings));
+      return settings;
+    }
+
+    function applyFilters() {
+      const { age, music, languages, categories } = getSettings();
+      filtered = videos.filter(v => v.age <= age && languages.includes(v.lang) && categories.includes(v.category));
+      if (music === "No") {
+        filtered = filtered.filter(v => v.music.toLowerCase() === "no");
+      } else if (music === "Yes") {
+        filtered = filtered.filter(v => v.music.toLowerCase() === "yes");
+      }
+      shuffle(filtered);
+      renderList();
+      embedPlaylist();
+    }
+
+    function renderList() {
+      const list = document.getElementById("videoList");
+      list.innerHTML = "";
+      filtered.forEach((v, i) => {
+        const btn = document.createElement("button");
+        btn.textContent = v.title;
+        btn.onclick = () => embedPlaylist(i);
+        list.appendChild(btn);
+      });
+    }
+
+    function embedPlaylist(startIndex = 0) {
+      if (!filtered.length) return;
+      const ids = filtered.map(v => v.id);
+      const first = ids[startIndex];
+      const rest = ids.filter((id, idx) => idx !== startIndex);
+      const playlist = [first, ...rest].join(",");
+      const iframe = document.getElementById("videoFrame");
+      iframe.src = `https://www.youtube.com/embed/${first}?playlist=${rest.join(",")}&autoplay=1&mute=1&rel=0&loop=1`;
+    }
+
+    function shuffle(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+    }
+
+    document.addEventListener("change", e => {
+      if (e.target.matches("select, input")) applyFilters();
+    });
+
+    const saved = localStorage.getItem("videoSettings");
+    if (saved) {
+      const s = JSON.parse(saved);
+      ageSelect.value = s.age;
+      document.getElementById("musicFilter").value = s.music;
+      document.querySelectorAll(".lang").forEach(e => {
+        e.checked = s.languages.includes(e.value);
+      });
+    }
+
+    loadFiles();
+  </script>
+</body>
+</html>
+
